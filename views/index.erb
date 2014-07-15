@@ -1,0 +1,7 @@
+<div class="job-list">
+  <ol>
+    <% DB[:occupations].all.each do |job| %>
+      <li><%= link_to job[:title] %></li>
+    <% end %>
+  </ol>
+</div>
