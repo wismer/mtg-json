@@ -1,0 +1,32 @@
+<script src="http://d3js.org/d3.v3.min.js" charset="utf-8"></script>
+<script src="//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+<script src="/underscore-min.js"></script>
+<script src="/backbone-min.js"></script>
+<script src="/data.js" charset"utf-8"></script>
+<script src="/card.js"></script>
+<script src='/carousel.js'></script>
+<script type="text/javascript">
+  // $(document).ready(function(){
+  //   var deck = JSON.parse($('div').text());
+  //   var cards = deck.cards
+  //   var cardObjects = _.map(cards, function(card){
+  //     return new Card(card);
+  //   })
+
+  //   $('button.show-cards').on("click", function(){
+  //     _.each(cardObjects, function(card){
+  //       card.appendImg('div.pictures')
+  //     })
+  //   }).click();
+  // })
+</script>
+<link rel="stylesheet" type="text/css" href="/style.css">
+<div class="button-stuff">
+  <button class="load-cards">Load Cards</button>
+  <button class="hide-cards">Hide Cards</button>
+  <button class="show-cards">Show All</button>
+  <button class="show-lands">Show Lands</button>
+</div>
+
+<div class='pictures'></div>
+<div class='cards' style="visibility: hidden; float: left;"><%= cards = File.read('public/PD2.json') %></div>
