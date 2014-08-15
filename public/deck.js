@@ -1,11 +1,13 @@
 $(document).ready(function(){
   var spellTypes = ["Creature", "Instant", "Enchantment", "Sorcery", "Land", "Tribal"]
-  var cardColors = {White: "W", Black: "B", Red: "Red", Blue: "U", Green: "G"}
+  var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G"}
   var getSets = function(sets) {
     $.getJSON("http://mtgjson.com/json/SetList.json", function(data){
       sets(data);
     })
   }
+
+  var malformedShit = []
 
   var cardStats = {
     bySpeed: function(cards, color) {
@@ -17,15 +19,21 @@ $(document).ready(function(){
       data = {}
       // To determine the relative "speediness" of the spell,
       // weight the colorless cost as 1 unit, colored cost as 1.25
+      var cardCount;
       _.each(spellTypes, function(type){
         if (!data.hasOwnProperty(type)) { data[type] = {} }
         for (i = 0; i < 12; i++) {
           if (!data[type].hasOwnProperty(i)) { data[type][i] = 0 }
+          cardCount = 0
           _.each(cards, function(card){
             if (card.get("cmc") == i && card.isOfType(type)) {
+              cardCount++;
               data[type][i] += card.calculateCost(color);
             }
           })
+
+          data[type][i] = cardCount == 0 ? 0 : data[type][i] / cardCount
+          // average = data[type][i] / cardCount
         }
       })
       // some function that reduces the cards by type? Like show "speed" of spell types?
@@ -57,12 +65,12 @@ $(document).ready(function(){
       })
     },
 
-    requestCards: function(data) {
+    requestCards: function(makeGraphs) {
       var cardSet = this
       $.getJSON("http://mtgjson.com/json/" + cardSet.get("code") + ".json", function(d){
         cards = _.map(d.cards, function(card){ return new Card(card); })
         cardSet.set({cards: cards, booster: d.booster})
-        data(cardSet)
+        makeGraphs()
       })
     },
 
@@ -150,7 +158,16 @@ $(document).ready(function(){
       manaCost = 0
       _.each(manaSymbols, function(c){
         if (c != "" && c != "X") {
-          c == cardColors[color] ? manaCost += 1.25 : manaCost += parseInt(c)
+          // c == cardColors[color] ? manaCost += 1.25 : manaCost += parseInt(c)
+          if (c == cardColors[color]) {
+            manaCost += 1.25
+          } else {
+            add = parseInt(c)
+            manaCost += parseInt(c)
+            if (isNaN(add)) { malformedShit.push(c) }
+          }
+        } else {
+
         }
       })
 
@@ -173,7 +190,12 @@ $(document).ready(function(){
       var cardSet = new CardSet({ code: $(this).attr("set") })
       selector = $(this)
 
-      cardSet.requestCards(function(e){
+      cardSet.requestCards(function(){
+        console.log(cardStats.bySpeed(cardSet.get("cards"), "Black"))
+        console.log(cardStats.bySpeed(cardSet.get("cards"), "Blue"))
+        console.log(cardStats.bySpeed(cardSet.get("cards"), "Green"))
+        console.log(cardStats.bySpeed(cardSet.get("cards"), "Red"))
+        console.log(cardStats.bySpeed(cardSet.get("cards"), "White"))
         // selector.css("margin-left", "-400px").css("margin-right", "200px").css("height", "1300px")
       })
 
@@ -182,6 +204,8 @@ $(document).ready(function(){
       // create the graphs upon highlighting
     })
   });
+
+  window.malformedShit = malformedShit
   // $("#expansion-list").on("click", function(e){
   //   console.log("WHASDASD")
   //   // console.log($(this).text())
