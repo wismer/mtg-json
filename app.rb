@@ -13,8 +13,16 @@ class SummaryApp
     erb :index
   end
 
+  get '/deck' do
+    erb :deck
+  end
+
   get '/cards' do
     erb :cards
+  end
+
+  post '/cards/draft/deck' do
+    deck = JSON.parse(params[:deck])
   end
 
   get '/occupations' do
@@ -29,6 +37,10 @@ class SummaryApp
   get '/occupations/:occupation' do
     job = DB[:occupations].where(title: params[:occupation]).first
     JSON.generate(job)
+  end
+
+  get '/cards/:deck' do
+    erb :deck
   end
 end
 
