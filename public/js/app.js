@@ -11,7 +11,7 @@ requirejs.config({
   }
 })
 
-requirejs(['jquery', 'd3', 'underscore', 'backbone', 'graph', 'deck'], function($, d3, _, backbone, graph, deck){
+requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbone){
   var CardSet = Backbone.Model.extend({
     initialize: function (set) {
       code: set.code
