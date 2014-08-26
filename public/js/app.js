@@ -5,13 +5,15 @@ requirejs.config({
     jquery: "//ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min",
     d3: "http://d3js.org/d3.v3.min",
     underscore: "../lib/underscore-min",
-    backbone: "../lib/backbone-min",
-    graph: "../lib/graph",
-    deck: "../lib/deck"
+    backbone: "../lib/backbone-min"
   }
 })
 
 requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbone){
+  var spellTypes = ["Creature", "Instant", "Enchantment", "Sorcery", "Land", "Tribal"]
+  var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G"}
+  var cardSymbols = { W: "White", B: "Black", R: "Red", U: "Blue", G: "Green" }
+
   var CardSet = Backbone.Model.extend({
     initialize: function (set) {
       code: set.code
@@ -22,7 +24,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       var cards = this.get("cards")
       colors = _.map(colors, function(color){
         return _.filter(cards, function(card){
-          return card.get("colors") == color;
+          return card.get("colors") === color;
         })
       })
 
@@ -47,6 +49,9 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       this.set("cards", cards)
     },
 
+    landCards: function(colors) {
+    },
+
     showDraft: function() {
       console.log(this.get("booster"))
     },
@@ -57,7 +62,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       var deck = [];
       for (step = 0; step < n; step++) {
         set = _.map(booster, function(slot){
-          while (typeof slot == "string") {
+          while (typeof slot === "string") {
             i = Math.floor(Math.random() * (cards.length - 1));
             if (cards[i].hasFrequency(slot)) {
               return cards[i];
@@ -113,12 +118,38 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       })
 
       return cardSet;
+    },
+
+    findCard: function(multiverseid) {
+      return _.find(this.get("cards"), function(card){ return card.get("multiverseid") === parseInt(multiverseid) })
+    }
+  })
+
+
+  var Deck = Backbone.Model.extend({
+    initialize: function() {
+      cards: []
+    },
+
+    shuffleCards: function() {
+      cards = _.shuffle(this.get("cards"))
+      this.set("cards", cards)
+    },
+
+    addCard: function(card) {
+      this.set("cards", this.get("cards").push(card))
+    },
+
+    removeCard: function(card) {
+      this.set("cards", this.get("cards").remove(card))
     }
   })
 
   var Card = Backbone.Model.extend({
     initialize: function(card) {
       card: card
+      img: this.imgTag()
+      tapped: false
     },
 
     cardScore: function() {
@@ -128,6 +159,11 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       }
 
       return 0;
+    },
+
+    castCard: function(manaPool) {
+      mana = manaPool();
+      _.find
     },
 
     spellModifier: function() {
@@ -170,7 +206,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     enchantmentScore: function() {
       enchant = this.get("type")
 
-      if (enchant == "Enchantment - Aura") {
+      if (enchant === "Enchantment - Aura") {
         return 0.85;
       } else {
         return 1.15;
@@ -191,7 +227,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     },
 
     hasFrequency: function(freq) {
-      return (this.get("rarity").toLowerCase()) == freq;
+      return (this.get("rarity").toLowerCase()) === freq;
     },
 
     imgTag: function() {
@@ -200,36 +236,42 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       return "<img src=" + site + size + ">"
     },
 
+    imgName: function() {
+      name = this.get("multiverseid")
+
+      return "<li><a href='" + "#card" + "' name='" + name + "'>" + this.get("name") + "</a></li>"
+    },
+
     containsColor: function(color) {
       colors = this.get("colors")
       return _.some(colors, function(c){
-        return c == color;
+        return c === color;
       });
     },
 
     isMonoColor: function() {
       if (this.has("colors")) {
-        return this.get("colors").length == 1;
+        return this.get("colors").length === 1;
       } else {
         return false;
       }
     },
 
     isOfType: function(type) {
-      return _.some(this.get("types"), function(cardType) { return cardType == type })
+      return _.some(this.get("types"), function(cardType) { return cardType === type })
     },
 
     isLand: function() {
-      return this.get("type") == "Land"
+      return this.get("type") === "Land"
     },
 
     isArtifactCreature: function() {
-      return this.get("types") == ["Artifact", "Creature"]
+      return this.get("types") === ["Artifact", "Creature"]
     },
 
     isSpell: function(spell) {
       return _.some(this.get("types"), function(type){
-        return type == spell;
+        return type === spell;
       })
     },
 
@@ -237,8 +279,8 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       manaSymbols = this.get("manaCost").split(/[^\w]/)
       manaCost = 0
       _.each(manaSymbols, function(c){
-        if (c != "" && c != "X") {
-          if (c == cardColors[color]) {
+        if (c !== "" && c !== "X") {
+          if (c === cardColors[color]) {
             manaCost += 1.5
           } else {
             manaCost += parseInt(c)
@@ -264,15 +306,32 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     for (i = 0; i < setList.length; i++) {
       getList(setList[i].code + ".json", function(cardSet){
         collection.push(cardSet)
-        if (collection.length == setList.length) {
+        if (collection.length === setList.length) {
           complete(collection);
         }
       })
     }
   }
 
+  var constructDeck = function(deck) {
+    artifactCards = _.filter(deck.get("cards"), function(card){ return card.isOfType("Artifact") })
+
+    _.each(artifactCards, function(card){ $("div.artifacts").append(card.imgName()) })
+    window.deck = deck
+    $("a").on("click", function(e) {
+      e.preventDefault();
+      console.log($(this).attr("name"))
+      card = deck.findCard($(this).attr("name"))
+
+      $("div.img").append(card.imgTag())
+      $("div.img").toggle();
+    })
+  }
+
   getList("SetList.json", function(setList){
     getAllCards(setList, function(cardSets){
+      $("option:selected").remove()
+
       cardSets = _.map(cardSets, function(cardSet){
         date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
         cardSet = new CardSet(cardSet);
@@ -281,9 +340,23 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         return cardSet;
       })
 
+
       cardSets = _.filter(cardSets, function(cardSet){
-        return cardSet.has("booster") && cardSet.get("name") != "Alara Reborn"
+        $("select").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
+        return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
       })
+
+
+
+      $("form button").on("click", function(e){
+        e.preventDefault();
+        name = $("option:selected").attr("name")
+
+        set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
+
+        constructDeck(set)
+      })
+
 
       _.each(cardSets, function(cardSet){
         cardSet.setAverages();
@@ -293,9 +366,11 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         return cardSet.attributes
       })
 
-      visualizeMe(showMeTheData)
+      //visualizeMe(showMeTheData)
     })
   })
+
+
 
   var visualizeMe = function (data) {
     data = _.sortBy(data, function(d){ return d.releaseDate })
@@ -373,7 +448,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         return line(d.diffs)
       })
       .style("stroke", function(d){
-        if (d.color == "White") {
+        if (d.color === "White") {
           color = d3.scale.category10();
           return color(d);
         } else {
