@@ -21,9 +21,8 @@ html {
 }
 
 div.card-placeholder {
-  float:right;
-  width:280px;
   height:1300px;
+  width:280px;
 }
 
 div#expansion-list {
@@ -45,7 +44,7 @@ div#expansion-list div:hover {
 
 div#expansion-list div {
   text-align: center;
-  
+
 }
 
 .axis path,
@@ -63,4 +62,22 @@ div#expansion-list div {
   fill: none;
   stroke-width: 3px;
   stroke: orange;
+}
+
+a:link {
+  color: black;
+}
+
+a:visited {
+  color: black;
+}
+
+a:hover {
+  color: red;
+}
+
+div.img {
+  position: fixed;
+  margin-left: 280px;
+  margin-top:100px;
 }

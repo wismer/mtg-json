@@ -14,10 +14,106 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
   var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G"}
   var cardSymbols = { W: "White", B: "Black", R: "Red", U: "Blue", G: "Green" }
 
+  var cmcSymbol = function(n) {
+    return "<img src='http://mtgimage.com/symbol/mana/" + n + ".svg' height=50 width=50>"
+  }
+
   var CardSet = Backbone.Model.extend({
     initialize: function (set) {
       code: set.code
       year: set.year
+    },
+
+    displayCosts: function(cmcSymbol) {
+      cards = this.convertedManaCost();
+      $("div.card-placeholder div").hide()
+      $("div.card-placeholder").append("<div class='costs'><h3>Converted Mana Cost</h3></div>")
+      _.each(_.keys(cards), function(n){
+        $("div.costs").append(cmcSymbol(n))
+        _.each(cards[n], function(c){
+          $("div.costs").append(c.imgName())
+        })
+      })
+    },
+
+    displayColors: function() {
+      cards = this.get("cards")
+
+      _.each(_.keys(cardColors), function(color){
+        $("div.card-placeholder").append("<div class='" + color.toLowerCase() + "'><h3>" + color + "</h3></div>")
+        _.each(cards, function(card){
+          if (card.containsColor(color) && card.isMonoColor()) {
+            $("div." + color.toLowerCase()).append(card.imgName())
+          }
+        })
+      })
+
+      artifacts = this.artifactCards()
+      $("div.card-placeholder").append("<div class='artifact'><h3>Artifacts</h3><div>")
+      _.each(artifacts, function(artifact){ $("div.artifact").append(artifact.imgName()) })
+      $("div.card-placeholder").append("<div class='multi-colored'><h3>Multi Colored</h3></div>")
+      multis = this.multiColorCards()
+      _.each(multis, function(multi){ $("div.multi-colored").append(multi.imgName()) })
+    },
+
+    displayTypes: function() {
+      cards = this.get("cards")
+
+      _.each(spellTypes, function(type){
+        $("div.card-placeholder").append("<div class='" + type.toLowerCase() + "'><h3>" + type + "</h3></div>")
+        _.each(cards, function(card){
+          if (card.isOfType(type)) { $("div." + type.toLowerCase()).append(card.imgName()) }
+        })
+      })
+    },
+
+    multiColorCards: function() {
+      return _.filter(this.get("cards"), function(card){ return !card.isMonoColor() && card.isNotArtifact(); })
+    },
+
+    artifactCards: function() {
+      return _.filter(this.get("cards"), function(card){ return card.isSpell("Artifact") } )
+    },
+
+    convertedManaCost: function() {
+      tally = {}
+      cards = this.get("cards")
+
+      _.each(cards, function(card) {
+        if (card.has("cmc")) {
+          cost = card.get("cmc")
+
+          if (tally.hasOwnProperty(cost)) {
+            tally[cost].push(card);
+          } else {
+            tally[cost] = [card]
+          }
+        }
+      })
+
+      return tally;
+    },
+
+    subtypeCount: function() {
+      tally = {}
+      keywords = this.keyWords()
+      _.each(keywords, function(word){
+        if (tally.hasOwnProperty(word)) {
+          tally[word] += 1;
+        } else {
+          tally[word] = 1;
+        }
+      })
+
+      return tally;
+    },
+
+    subtypeLinks: function(makeLink) {
+      cards = this.subtypeCount()
+      keys = _.keys(cards)
+      _.each(keys, function(key){
+        makeLink(key, key + ": " + cards[key])
+      })
     },
 
     costLayout: function() {
@@ -76,7 +172,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
     cardsByColor: function(color) {
       return _.filter(this.get("cards"), function(card) {
-        return card.containsColor(color) && card.isMonoColor()
+        return card.isOfColor(color)
       })
     },
 
@@ -90,6 +186,20 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       })
 
       return _.reduce(scores, function(l,r) { return l + r; }) / scores.length;
+    },
+
+    keyWords: function() {
+      cards = _.filter(this.get("cards"), function(card) {
+        return !card.isLand();
+      })
+
+      var keywords = [];
+
+      _.each(cards, function(card){
+        keywords = keywords.concat(card.cardTypes())
+      })
+
+      return keywords;
     },
 
     getScoresByColor: function(color) {
@@ -122,6 +232,18 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
     findCard: function(multiverseid) {
       return _.find(this.get("cards"), function(card){ return card.get("multiverseid") === parseInt(multiverseid) })
+    },
+
+    cardsWithKeyword: function(keyword) {
+      cards = this.get("cards")
+
+      return _.filter(cards, function(card){
+        return card.hasKeyword(keyword)
+      })
+    },
+
+    cardsOfColor: function(color) {
+      return _.filter(this.get("cards"), function(card) { return card.isOfColor(color) })
     }
   })
 
@@ -150,6 +272,25 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       card: card
       img: this.imgTag()
       tapped: false
+    },
+
+    hasKeyword: function(keyword) {
+      return _.some(this.cardTypes(), function(type){ return type === keyword })
+    },
+
+    cardTypes: function() {
+      keywords = []
+
+      if (this.has("subtypes")) {
+        keywords = keywords.concat(this.get("subtypes"))
+      }
+
+      if (this.has("supertypes")) {
+        keywords = keywords.concat(this.get("supertypes"))
+      }
+
+      // keywords = keywords.concat(this.get("types"))
+      return keywords
     },
 
     cardScore: function() {
@@ -226,13 +367,19 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       return cost;
     },
 
+    isNotArtifact: function() {
+      if (this.has("colors")) {
+        return this.get("colors").length > 1
+      } 
+    },
+
     hasFrequency: function(freq) {
       return (this.get("rarity").toLowerCase()) === freq;
     },
 
     imgTag: function() {
       site = "'http://mtgimage.com/multiverseid/" + this.get("multiverseid") + ".jpg'"
-      size = " width='180' height='240'"
+      size = " width='225' height='300'"
       return "<img src=" + site + size + ">"
     },
 
@@ -257,12 +404,20 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       }
     },
 
+    isOfColor: function(color) {
+      if (this.has("colors")) {
+        return this.get("colors").indexOf(color) === 0 && this.isMonoColor(color);
+      } else {
+        return false;
+      }
+    },
+
     isOfType: function(type) {
       return _.some(this.get("types"), function(cardType) { return cardType === type })
     },
 
     isLand: function() {
-      return this.get("type") === "Land"
+      return this.get("type") === "Land" || _.some(this.get("types"), function(type){return type === "Land"})
     },
 
     isArtifactCreature: function() {
@@ -313,24 +468,34 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     }
   }
 
-  var constructDeck = function(deck) {
-    artifactCards = _.filter(deck.get("cards"), function(card){ return card.isOfType("Artifact") })
-
-    _.each(artifactCards, function(card){ $("div.artifacts").append(card.imgName()) })
+  var constructDeck = function(deck, filter) {
     window.deck = deck
-    $("a").on("click", function(e) {
-      e.preventDefault();
-      console.log($(this).attr("name"))
-      card = deck.findCard($(this).attr("name"))
 
-      $("div.img").append(card.imgTag())
-      $("div.img").toggle();
+    if (filter === "CMC") {
+      deck.displayCosts(cmcSymbol)
+    } else if (filter === "Color") {
+      deck.displayColors()
+    } else {
+      deck.displayTypes()
+    }
+
+    $("a").on("mouseenter", function(e) {
+      card = deck.findCard($(this).attr("name"))
+      img = card.imgTag()
+      pos = $(this).position()
+      $("div.img img").remove()
+      $("div.img").show()
+      $("div.img").append(img)
+    })
+
+    $("a").on("click", function(e){
+      e.preventDefault();
     })
   }
 
   getList("SetList.json", function(setList){
     getAllCards(setList, function(cardSets){
-      $("option:selected").remove()
+      $("select.decks option:selected").remove()
 
       cardSets = _.map(cardSets, function(cardSet){
         date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
@@ -342,19 +507,19 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
 
       cardSets = _.filter(cardSets, function(cardSet){
-        $("select").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
+        $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
         return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
       })
 
 
 
-      $("form button").on("click", function(e){
+      $("form select").on("change", function(e){
         e.preventDefault();
-        name = $("option:selected").attr("name")
-
+        $("div.card-placeholder div").hide()
+        name = $("select.decks option:selected").attr("name")
         set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
-
-        constructDeck(set)
+        filter = $("select[name='display']").children(":selected").text()
+        constructDeck(set, filter)
       })
 
 
