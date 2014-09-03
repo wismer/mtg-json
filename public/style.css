@@ -9,7 +9,6 @@ div.carousel {
 }
 
 div.card-sets {
-  float: left;
   width: 1100px;
 }
 
@@ -21,9 +20,9 @@ html {
 }
 
 div.card-placeholder {
-  height:1300px;
-  width:280px;
+  float:left;
 }
+
 
 div#expansion-list {
   float: right;
@@ -80,4 +79,10 @@ div.img {
   position: fixed;
   margin-left: 280px;
   margin-top:100px;
+}
+
+div.player {
+  float:right;
+  height: 1300px;
+  width: 280px;
 }

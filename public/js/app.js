@@ -14,9 +14,31 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
   var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G"}
   var cardSymbols = { W: "White", B: "Black", R: "Red", U: "Blue", G: "Green" }
 
+
   var cmcSymbol = function(n) {
     return "<img src='http://mtgimage.com/symbol/mana/" + n + ".svg' height=50 width=50>"
   }
+
+  var Profile = Backbone.Model.extend({
+    initialize: function() {
+      name: name
+    },
+
+    insertToDB: function(profile) {
+      var model = this;
+      if (!model.has("foreignKey")) {
+        $.ajax({
+          url: "/profile",
+          type: "POST",
+          data: {name: this.get("name")},
+          success: function(data, xhr, error) {
+            model.set("foreignKey", parseInt(data))
+            profile(data);
+          }
+        })
+      }
+    }
+  })
 
   var CardSet = Backbone.Model.extend({
     initialize: function (set) {
@@ -24,9 +46,13 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       year: set.year
     },
 
+    convertToDraft: function(cards) {
+      this.set("cards", cards)
+    },
+
     displayCosts: function(cmcSymbol) {
       cards = this.convertedManaCost();
-      $("div.card-placeholder div").hide()
+      $("div.card-placeholder div").remove()
       $("div.card-placeholder").append("<div class='costs'><h3>Converted Mana Cost</h3></div>")
       _.each(_.keys(cards), function(n){
         $("div.costs").append(cmcSymbol(n))
@@ -68,7 +94,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     },
 
     multiColorCards: function() {
-      return _.filter(this.get("cards"), function(card){ return !card.isMonoColor() && card.isNotArtifact(); })
+      return _.filter(this.get("cards"), function(card){ return card.isMulti(); })
     },
 
     artifactCards: function() {
@@ -167,7 +193,8 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         })
         deck.push(set)
       }
-      return _.flatten(deck);
+      this.set("cards", _.flatten(deck))
+      return this;
     },
 
     cardsByColor: function(color) {
@@ -250,7 +277,40 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
   var Deck = Backbone.Model.extend({
     initialize: function() {
-      cards: []
+      cards: [];
+    },
+
+    tally: function() {
+      cards = this.get("cards")
+      $("div.player").append("<div class='summary'></div>")
+      _.each(spellTypes, function(type){
+        i = 0
+        _.each(cards, function(card){
+          if (card.isOfType(type)) { i += 1 }
+        })
+
+        $("div.summary").append("<h5>" + type + ": " + i + "</h5>")
+      })
+    },
+
+    cardNumbers: function() {
+      cards = this.get("cards")
+    },
+
+    redraw: function() {
+      $("div.player div").remove()
+      tally = this.tally()
+
+      cardNumbers = this.cardNumbers()
+      cards = this.get("cards")
+      $("div.player").append("<div class='draft'></div>")
+      _.each(cards, function(card){
+        $("div.draft").append(card.imgName())
+      })
+    },
+
+    foreignKey: function(id) {
+      this.set("foreignKey", parseInt(id));
     },
 
     shuffleCards: function() {
@@ -259,11 +319,33 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     },
 
     addCard: function(card) {
-      this.set("cards", this.get("cards").push(card))
+      cards = this.get("cards")
+      cards.push(card)
+      this.set("cards", cards)
     },
 
     removeCard: function(card) {
-      this.set("cards", this.get("cards").remove(card))
+      card = _.some(this.get("cards"), function(card){
+        return card === card
+      })
+
+      if (card) {
+        cards = _.filter(this.get("cards"), function(deckCard){ return deckCard !== card })
+        this.set("cards", cards)
+      } else {
+        // trigger event?
+      }
+    },
+
+    displayCards: function() {
+
+    }
+  })
+
+
+  var Booster = Backbone.Model.extend({
+    initialize: function(cards) {
+      cards: cards
     }
   })
 
@@ -367,10 +449,12 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       return cost;
     },
 
-    isNotArtifact: function() {
+    isArtifact: function() {
       if (this.has("colors")) {
-        return this.get("colors").length > 1
-      } 
+        return false
+      } else {
+        return true;
+      }
     },
 
     hasFrequency: function(freq) {
@@ -430,6 +514,14 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       })
     },
 
+    isMulti: function() {
+      if (this.has("colors")) {
+        return this.get("colors").length > 1
+      } else {
+        return false;
+      }
+    },
+
     calculateCost: function(color) {
       manaSymbols = this.get("manaCost").split(/[^\w]/)
       manaCost = 0
@@ -468,15 +560,19 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     }
   }
 
-  var constructDeck = function(deck, filter) {
-    window.deck = deck
+  var constructDeck = function(deck, filter, profile) {
+    customDeck = new Deck({cards: []});
+
+
 
     if (filter === "CMC") {
       deck.displayCosts(cmcSymbol)
     } else if (filter === "Color") {
       deck.displayColors()
-    } else {
+    } else if (filter === "Spell") {
       deck.displayTypes()
+    } else {
+      $("div.card-placeholder div").remove()
     }
 
     $("a").on("mouseenter", function(e) {
@@ -490,51 +586,78 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
     $("a").on("click", function(e){
       e.preventDefault();
+      card = deck.findCard($(this).attr("name"))
+      customDeck.addCard(card)
+      customDeck.redraw()
+      $(this).remove()
+    })
+
+    $("#decks").on("submit", function(e){
+      e.preventDefault();
+
+      if (!profile.has("foreignKey")) {
+        profile.insertToDB(function(data){
+          console.log(data)
+        })
+      }
+
+      customDeck.foreignKey(profile.get("foreignKey"))
+      window.customDeck = customDeck
+      $.ajax({
+        url: "/cards/draft",
+        data: JSON.stringify(customDeck),
+        headers: {"Content-Type": "application/json"},
+        type: "POST",
+        dataType: "json",
+        success: function(data, xhr, error) {
+          console.log(data)
+        }
+      })
     })
   }
 
-  getList("SetList.json", function(setList){
-    getAllCards(setList, function(cardSets){
-      $("select.decks option:selected").remove()
+  $("#profile").on("submit", function(e){
+    e.preventDefault();
+    profileName = $("#profile input").val()
+    var profile = new Profile({name: profileName})
 
-      cardSets = _.map(cardSets, function(cardSet){
-        date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
-        cardSet = new CardSet(cardSet);
-        cardSet.set("releaseDate", date)
-        cardSet.initializeCards();
-        return cardSet;
+    getList("SetList.json", function(setList){
+      getAllCards(setList, function(cardSets){
+        $("select.decks option:selected").remove()
+        cardSets = _.map(cardSets, function(cardSet){
+          date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
+          cardSet = new CardSet(cardSet);
+          cardSet.set("releaseDate", date)
+          cardSet.initializeCards();
+          return cardSet;
+        })
+
+        cardSets = _.filter(cardSets, function(cardSet){
+          $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
+          return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
+        })
+
+        $("#decks select").on("change", function(e){
+          e.preventDefault();
+          $("div.card-placeholder div").remove()
+          name = $("select.decks option:selected").attr("name")
+          set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
+          filter = $("select[name='display']").children(":selected").text()
+          constructDeck(set.randomizeBooster(6), filter, profile)
+        })
+
+        _.each(cardSets, function(cardSet){
+          cardSet.setAverages();
+        })
+
+        showMeTheData = _.map(cardSets, function(cardSet){
+          return cardSet.attributes
+        })
+
+        //visualizeMe(showMeTheData)
       })
-
-
-      cardSets = _.filter(cardSets, function(cardSet){
-        $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
-        return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
-      })
-
-
-
-      $("form select").on("change", function(e){
-        e.preventDefault();
-        $("div.card-placeholder div").hide()
-        name = $("select.decks option:selected").attr("name")
-        set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
-        filter = $("select[name='display']").children(":selected").text()
-        constructDeck(set, filter)
-      })
-
-
-      _.each(cardSets, function(cardSet){
-        cardSet.setAverages();
-      })
-
-      showMeTheData = _.map(cardSets, function(cardSet){
-        return cardSet.attributes
-      })
-
-      //visualizeMe(showMeTheData)
     })
   })
-
 
 
   var visualizeMe = function (data) {
