@@ -30,7 +30,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         $.ajax({
           url: "/profile",
           type: "POST",
-          data: {name: this.get("name")},
+          data: {name: model.get("name")},
           success: function(data, xhr, error) {
             model.set("foreignKey", parseInt(data))
             profile(data);
@@ -44,6 +44,14 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     initialize: function (set) {
       code: set.code
       year: set.year
+    },
+
+    downloadCards: function(success) {
+      var model = this
+      getList(this.get("code") + ".json", function(data){
+        model.attributes = data
+        success();
+      })
     },
 
     convertToDraft: function(cards) {
@@ -63,32 +71,39 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     },
 
     displayColors: function() {
-      cards = this.get("cards")
+      cards = this.get("draft")
 
-      _.each(_.keys(cardColors), function(color){
-        $("div.card-placeholder").append("<div class='" + color.toLowerCase() + "'><h3>" + color + "</h3></div>")
-        _.each(cards, function(card){
-          if (card.containsColor(color) && card.isMonoColor()) {
-            $("div." + color.toLowerCase()).append(card.imgName())
-          }
-        })
+      colors = _.map(_.keys(cardColors), function(color){ return color.toLowerCase() })
+      $("div.card-placeholder").empty()
+
+      colors.push("artifact")
+      colors.push("multi-colored")
+
+      _.each(colors, function(color){
+        $("div.card-placeholder").append("<div id='" + color + "'><h3>" + color + "</h3></div>")
       })
 
-      artifacts = this.artifactCards()
-      $("div.card-placeholder").append("<div class='artifact'><h3>Artifacts</h3><div>")
-      _.each(artifacts, function(artifact){ $("div.artifact").append(artifact.imgName()) })
-      $("div.card-placeholder").append("<div class='multi-colored'><h3>Multi Colored</h3></div>")
-      multis = this.multiColorCards()
-      _.each(multis, function(multi){ $("div.multi-colored").append(multi.imgName()) })
+      window.cards = cards
+
+      _.each(cards, function(card){
+        if (card.isMonoColor()){
+          color = card.get("colors")[0]
+          $("#" + color.toLowerCase()).append(card.imgName())
+        } else if (card.isArtifact()) {
+          $("#artifact").append(card.imgName())
+        } else {
+          $("#multi-colored").append(card.imgName())
+        }
+      })
     },
 
     displayTypes: function() {
-      cards = this.get("cards")
-
+      cards = this.get("draft")
+      $("div.card-placeholder").empty()
       _.each(spellTypes, function(type){
-        $("div.card-placeholder").append("<div class='" + type.toLowerCase() + "'><h3>" + type + "</h3></div>")
+        $("div.card-placeholder").append("<div id='" + type.toLowerCase() + "'><h3>" + type + "</h3></div>")
         _.each(cards, function(card){
-          if (card.isOfType(type)) { $("div." + type.toLowerCase()).append(card.imgName()) }
+          if (card.isOfType(type)) { $("#" + type.toLowerCase()).append(card.imgName()) }
         })
       })
     },
@@ -103,7 +118,13 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
     convertedManaCost: function() {
       tally = {}
-      cards = this.get("cards")
+
+      if (this.has("draft")) {
+        cards = this.get("draft")
+      } else {
+        cards = this.get("cards")
+      }
+
 
       _.each(cards, function(card) {
         if (card.has("cmc")) {
@@ -169,6 +190,10 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       })
 
       this.set("cards", cards)
+
+      if (this.has("booster")) {
+        this.randomizeBooster(6)
+      }
     },
 
     landCards: function(colors) {
@@ -181,6 +206,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     randomizeBooster: function(n) {
       cards = this.get("cards")
       booster = this.get("booster")
+      window.cards = cards
       var deck = [];
       for (step = 0; step < n; step++) {
         set = _.map(booster, function(slot){
@@ -193,7 +219,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
         })
         deck.push(set)
       }
-      this.set("cards", _.flatten(deck))
+      this.set("draft", _.flatten(deck))
       return this;
     },
 
@@ -543,6 +569,9 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
   var getList = function (name, setList) {
     $.getJSON("http://mtgjson.com/json/" + name, function(data){
+      console.log(Date.now(), "Getlista")
+    }).done(function(data){
+      console.log(Date.now(), "Done")
       setList(data);
     })
   }
@@ -560,11 +589,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     }
   }
 
-  var constructDeck = function(deck, filter, profile) {
-    customDeck = new Deck({cards: []});
-
-
-
+  var constructDeck = function(deck, filter, profileKey) {
     if (filter === "CMC") {
       deck.displayCosts(cmcSymbol)
     } else if (filter === "Color") {
@@ -572,7 +597,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     } else if (filter === "Spell") {
       deck.displayTypes()
     } else {
-      $("div.card-placeholder div").remove()
+      $("div.card-placeholder").empty()
     }
 
     $("a").on("mouseenter", function(e) {
@@ -595,12 +620,6 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     $("#decks").on("submit", function(e){
       e.preventDefault();
 
-      if (!profile.has("foreignKey")) {
-        profile.insertToDB(function(data){
-          console.log(data)
-        })
-      }
-
       customDeck.foreignKey(profile.get("foreignKey"))
       window.customDeck = customDeck
       $.ajax({
@@ -616,47 +635,119 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     })
   }
 
+  var loadList = function() {
+    getList("SetList.json", function(list){
+      $("#deckSelection option:selected").remove()
+      _.each(list, function(set){
+        $("#deckSelection").append("<option name='" + set["code"] + "'>" + set["name"] + "</option>")
+      })
+    })
+  }
+
+
+  var changeView = function(deck, filter) {
+    if (filter === "CMC") {
+      deck.displayCosts(cmcSymbol)
+    } else if (filter === "Color") {
+      deck.displayColors()
+    } else if (filter === "Spell") {
+      deck.displayTypes()
+    } else {
+      $("div.card-placeholder").empty()
+    }
+  }
+
   $("#profile").on("submit", function(e){
     e.preventDefault();
     profileName = $("#profile input").val()
     var profile = new Profile({name: profileName})
+    loadList();
 
-    getList("SetList.json", function(setList){
-      getAllCards(setList, function(cardSets){
-        $("select.decks option:selected").remove()
-        cardSets = _.map(cardSets, function(cardSet){
-          date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
-          cardSet = new CardSet(cardSet);
-          cardSet.set("releaseDate", date)
-          cardSet.initializeCards();
-          return cardSet;
+    profile.insertToDB(function(key){
+      var cardSet;
+      $("#deckSelection").on("change", function(e){
+        e.preventDefault();
+        set = $("#deckSelection option:selected").attr("name");
+        cardSet = new CardSet({code: set})
+        var cards;
+
+        var request = function() {
+          return $.getJSON("http://mtgjson.com/json/" + cardSet.get("code") + ".json")
+        }
+
+        request().done(function(data){
+          cardSet.set("cards", data.cards)
+          cardSet.set("booster", data.booster)
+
+          cardSet.initializeCards(); // that sets the draft
+
+          initial = $("#types option:selected").val()
+          changeView(cardSet, initial)
+
+          $("#types").on("change", function(e){
+            window.cardSet = cardSet
+            filter = $("#types option:selected").val()
+            constructDeck(cardSet, filter, key)
+          })
         })
 
-        cardSets = _.filter(cardSets, function(cardSet){
-          $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
-          return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
-        })
 
-        $("#decks select").on("change", function(e){
-          e.preventDefault();
-          $("div.card-placeholder div").remove()
-          name = $("select.decks option:selected").attr("name")
-          set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
-          filter = $("select[name='display']").children(":selected").text()
-          constructDeck(set.randomizeBooster(6), filter, profile)
-        })
 
-        _.each(cardSets, function(cardSet){
-          cardSet.setAverages();
-        })
+        // cardSet.downloadCards(function(){
+        //   if (cardSet.has("booster")) {
+        //     $("#decks button").on("click", function(e){
+        //       boosterized = cardSet.randomizeBooster(6);
+        //       window.boosterized = boosterized
+        //       e.preventDefault();
+        //       filter = $("#types option:selected").val()
+        //       constructDeck(cardSet.randomizeBooster(6), filter, key)
+        //     })
+        //   }
+        // })
 
-        showMeTheData = _.map(cardSets, function(cardSet){
-          return cardSet.attributes
-        })
+
+      })
+
+
+
+    })
+
+    // getList("SetList.json", function(setList){
+    //   getAllCards(setList, function(cardSets){
+    //     $("select.decks option:selected").remove()
+    //     cardSets = _.map(cardSets, function(cardSet){
+    //       date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
+    //       cardSet = new CardSet(cardSet);
+    //       cardSet.set("releaseDate", date)
+    //       cardSet.initializeCards();
+    //       return cardSet;
+    //     })
+
+    //     cardSets = _.filter(cardSets, function(cardSet){
+    //       $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
+    //       return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
+    //     })
+
+    //     $("#decks select").on("change", function(e){
+    //       e.preventDefault();
+    //       $("div.card-placeholder div").remove()
+    //       name = $("select.decks option:selected").attr("name")
+    //       set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
+    //       filter = $("select[name='display']").children(":selected").text()
+    //       constructDeck(set.randomizeBooster(6), filter, profile)
+    //     })
+
+    //     _.each(cardSets, function(cardSet){
+    //       cardSet.setAverages();
+    //     })
+
+    //     showMeTheData = _.map(cardSets, function(cardSet){
+    //       return cardSet.attributes
+    //     })
 
         //visualizeMe(showMeTheData)
-      })
-    })
+    //   })
+    // })
   })
 
 
