@@ -10,9 +10,56 @@ requirejs.config({
 })
 
 requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbone){
-  var spellTypes = ["Creature", "Instant", "Enchantment", "Sorcery", "Land", "Tribal"]
-  var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G"}
+
+
+  var spellTypes = ["Creature", "Instant", "Enchantment", "Sorcery", "Land", "Artifact", "Tribal"]
+  var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G", Artifact: null, Multi: null }
   var cardSymbols = { W: "White", B: "Black", R: "Red", U: "Blue", G: "Green" }
+
+  var categories = {
+    spells: function(obj) {
+      _.each(spellTypes, function(spell){ obj[spell] = {} })
+      return obj;
+    },
+
+    colors: function(obj) {
+      _.each(_.keys(cardColors), function(color){ obj[color] = {} })
+      return obj;
+    },
+
+    cmc: function(obj) {
+      for (i = 0; i < 13; i++) { obj[i] = {} }
+      return obj
+    }
+  }
+
+  var Card = Backbone.Model.extend({
+    initialize: function(card) {
+      card: card
+    },
+
+    category: function(category) {
+      value = this.get(category)
+
+      if (category === "types") {
+        return value[0]
+      } else if (category === "colors" && this.isArtifact()) {
+        return "Artifact"
+      } else if (category === "colors") {
+        return value.length > 1 ? "Multi" : value[0]
+      } else {
+        return value
+      }
+    },
+
+    hasFrequency: function(freq) {
+      return this.get("rarity").toLowerCase() === freq;
+    },
+
+    isArtifact: function() {
+      return this.has("cmc") && (!this.has("colors"))
+    }
+  })
 
 
   var cmcSymbol = function(n) {
@@ -40,598 +87,54 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     }
   })
 
-  var CardSet = Backbone.Model.extend({
-    initialize: function (set) {
-      code: set.code
-      year: set.year
+  var Draft = Backbone.Model.extend({
+    initialize: function(draft) {
+      cards: draft.cards
     },
 
-    downloadCards: function(success) {
-      var model = this
-      getList(this.get("code") + ".json", function(data){
-        model.attributes = data
-        success();
-      })
-    },
-
-    convertToDraft: function(cards) {
-      this.set("cards", cards)
-    },
-
-    displayCosts: function(cmcSymbol) {
-      cards = this.convertedManaCost();
-      $("div.card-placeholder div").remove()
-      $("div.card-placeholder").append("<div class='costs'><h3>Converted Mana Cost</h3></div>")
-      _.each(_.keys(cards), function(n){
-        $("div.costs").append(cmcSymbol(n))
-        _.each(cards[n], function(c){
-          $("div.costs").append(c.imgName())
-        })
-      })
-    },
-
-    displayColors: function() {
-      cards = this.get("draft")
-
-      colors = _.map(_.keys(cardColors), function(color){ return color.toLowerCase() })
-      $("div.card-placeholder").empty()
-
-      colors.push("artifact")
-      colors.push("multi-colored")
-
-      _.each(colors, function(color){
-        $("div.card-placeholder").append("<div id='" + color + "'><h3>" + color + "</h3></div>")
-      })
-
-      window.cards = cards
-
-      _.each(cards, function(card){
-        if (card.isMonoColor()){
-          color = card.get("colors")[0]
-          $("#" + color.toLowerCase()).append(card.imgName())
-        } else if (card.isArtifact()) {
-          $("#artifact").append(card.imgName())
-        } else {
-          $("#multi-colored").append(card.imgName())
-        }
-      })
-    },
-
-    displayTypes: function() {
-      cards = this.get("draft")
-      $("div.card-placeholder").empty()
-      _.each(spellTypes, function(type){
-        $("div.card-placeholder").append("<div id='" + type.toLowerCase() + "'><h3>" + type + "</h3></div>")
-        _.each(cards, function(card){
-          if (card.isOfType(type)) { $("#" + type.toLowerCase()).append(card.imgName()) }
-        })
-      })
-    },
-
-    multiColorCards: function() {
-      return _.filter(this.get("cards"), function(card){ return card.isMulti(); })
-    },
-
-    artifactCards: function() {
-      return _.filter(this.get("cards"), function(card){ return card.isSpell("Artifact") } )
-    },
-
-    convertedManaCost: function() {
-      tally = {}
-
-      if (this.has("draft")) {
-        cards = this.get("draft")
+    display: function(category) {
+      cards = this.get("cards")
+      if (category === "cmc") {
+        cards = _.filter(cards, function(card){ return card.has("cmc") })
+        result = categories.cmc({})
+      } else if (category === "types") {
+        result = categories.spells({})
       } else {
-        cards = this.get("cards")
+        cards = _.filter(cards, function(card){ return card.has("colors") || card.isArtifact()})
+        result = categories.colors({})
       }
 
-
-      _.each(cards, function(card) {
-        if (card.has("cmc")) {
-          cost = card.get("cmc")
-
-          if (tally.hasOwnProperty(cost)) {
-            tally[cost].push(card);
+      _.each(cards, function(card){
+        key = card.category(category)
+        if (key) {
+          if (result[key][card.cid]) {
+            result[key][card.cid].push(card)
           } else {
-            tally[cost] = [card]
+            result[key][card.cid] = [card]
           }
         }
       })
 
-      return tally;
-    },
-
-    subtypeCount: function() {
-      tally = {}
-      keywords = this.keyWords()
-      _.each(keywords, function(word){
-        if (tally.hasOwnProperty(word)) {
-          tally[word] += 1;
-        } else {
-          tally[word] = 1;
-        }
-      })
-
-      return tally;
-    },
-
-    subtypeLinks: function(makeLink) {
-      cards = this.subtypeCount()
-      keys = _.keys(cards)
-      _.each(keys, function(key){
-        makeLink(key, key + ": " + cards[key])
-      })
-    },
-
-    costLayout: function() {
-      var cards = this.get("cards")
-      colors = _.map(colors, function(color){
-        return _.filter(cards, function(card){
-          return card.get("colors") === color;
-        })
-      })
-
-      var cost = 0
-
-      _.each(cards, function(card){
-        if (card.has("cmc")) {
-          if (cost <= card.get("cmc")) {
-            cost = card.get("cmc")
-          }
-        }
-      })
-    },
-
-    initializeCards: function() {
-      cards = this.get("cards")
-
-      cards = _.map(cards, function(card){
-        return new Card(card)
-      })
-
-      this.set("cards", cards)
-
-      if (this.has("booster")) {
-        this.randomizeBooster(6)
-      }
-    },
-
-    landCards: function(colors) {
-    },
-
-    showDraft: function() {
-      console.log(this.get("booster"))
-    },
-
-    randomizeBooster: function(n) {
-      cards = this.get("cards")
-      booster = this.get("booster")
-      window.cards = cards
-      var deck = [];
-      for (step = 0; step < n; step++) {
-        set = _.map(booster, function(slot){
-          while (typeof slot === "string") {
-            i = Math.floor(Math.random() * (cards.length - 1));
-            if (cards[i].hasFrequency(slot)) {
-              return cards[i];
-            }
-          }
-        })
-        deck.push(set)
-      }
-      this.set("draft", _.flatten(deck))
-      return this;
-    },
-
-    cardsByColor: function(color) {
-      return _.filter(this.get("cards"), function(card) {
-        return card.isOfColor(color)
-      })
-    },
-
-    getScoreAverage: function() {
-      cards = _.filter(this.get('cards'), function(card){
-        return card.isMonoColor();
-      })
-
-      scores = _.map(cards, function(card){
-        return card.cardScore();
-      })
-
-      return _.reduce(scores, function(l,r) { return l + r; }) / scores.length;
-    },
-
-    keyWords: function() {
-      cards = _.filter(this.get("cards"), function(card) {
-        return !card.isLand();
-      })
-
-      var keywords = [];
-
-      _.each(cards, function(card){
-        keywords = keywords.concat(card.cardTypes())
-      })
-
-      return keywords;
-    },
-
-    getScoresByColor: function(color) {
-      cards = this.cardsByColor(color)
-      scores = _.map(cards, function(card) { return card.cardScore(); })
-      // average score for each color for each spell type
-      // against average score for ALL cards, which show which color/spell was
-      // above or below average?
-
-      setAverage = _.reduce(scores, function(l, r){ return l + r; }) / scores.length
-
-      return setAverage;
-    },
-
-    setAverages: function() {
-      var cardColors = {}
-      var cardSet = this
-      _.each(["Blue", "Red", "Green", "Black", "White"], function(color){
-        if (!cardColors.hasOwnProperty(color)) { cardColors[color] = 0 }
-        averageScoreByColor = cardSet.getScoresByColor(color)
-        averageScore = cardSet.getScoreAverage();
-        differential = averageScoreByColor - averageScore
-        cardSet.set("averageScore", averageScore)
-        cardSet.set(color, averageScoreByColor)
-        cardSet.set("differential" + color, differential)
-      })
-
-      return cardSet;
-    },
-
-    findCard: function(multiverseid) {
-      return _.find(this.get("cards"), function(card){ return card.get("multiverseid") === parseInt(multiverseid) })
-    },
-
-    cardsWithKeyword: function(keyword) {
-      cards = this.get("cards")
-
-      return _.filter(cards, function(card){
-        return card.hasKeyword(keyword)
-      })
-    },
-
-    cardsOfColor: function(color) {
-      return _.filter(this.get("cards"), function(card) { return card.isOfColor(color) })
+      return result;
     }
   })
 
-
-  var Deck = Backbone.Model.extend({
-    initialize: function() {
-      cards: [];
-    },
-
-    tally: function() {
-      cards = this.get("cards")
-      $("div.player").append("<div class='summary'></div>")
-      _.each(spellTypes, function(type){
-        i = 0
-        _.each(cards, function(card){
-          if (card.isOfType(type)) { i += 1 }
-        })
-
-        $("div.summary").append("<h5>" + type + ": " + i + "</h5>")
-      })
-    },
-
-    cardNumbers: function() {
-      cards = this.get("cards")
-    },
-
-    redraw: function() {
-      $("div.player div").remove()
-      tally = this.tally()
-
-      cardNumbers = this.cardNumbers()
-      cards = this.get("cards")
-      $("div.player").append("<div class='draft'></div>")
-      _.each(cards, function(card){
-        $("div.draft").append(card.imgName())
-      })
-    },
-
-    foreignKey: function(id) {
-      this.set("foreignKey", parseInt(id));
-    },
-
-    shuffleCards: function() {
-      cards = _.shuffle(this.get("cards"))
-      this.set("cards", cards)
-    },
-
-    addCard: function(card) {
-      cards = this.get("cards")
-      cards.push(card)
-      this.set("cards", cards)
-    },
-
-    removeCard: function(card) {
-      card = _.some(this.get("cards"), function(card){
-        return card === card
-      })
-
-      if (card) {
-        cards = _.filter(this.get("cards"), function(deckCard){ return deckCard !== card })
-        this.set("cards", cards)
-      } else {
-        // trigger event?
-      }
-    },
-
-    displayCards: function() {
-
-    }
+  var List = Backbone.Collection.extend({
+    model: Card
   })
 
+  var categorize = function(cards, category) {
+    cards = _.map(cards, function(card){
+      return card.category(category) // returns an obj
+    })
 
-  var Booster = Backbone.Model.extend({
-    initialize: function(cards) {
-      cards: cards
-    }
-  })
-
-  var Card = Backbone.Model.extend({
-    initialize: function(card) {
-      card: card
-      img: this.imgTag()
-      tapped: false
-    },
-
-    hasKeyword: function(keyword) {
-      return _.some(this.cardTypes(), function(type){ return type === keyword })
-    },
-
-    cardTypes: function() {
-      keywords = []
-
-      if (this.has("subtypes")) {
-        keywords = keywords.concat(this.get("subtypes"))
-      }
-
-      if (this.has("supertypes")) {
-        keywords = keywords.concat(this.get("supertypes"))
-      }
-
-      // keywords = keywords.concat(this.get("types"))
-      return keywords
-    },
-
-    cardScore: function() {
-      if (this.has("cmc")) {
-        solid = this.getSolidCost()
-        return (this.get("cmc") + (solid * 1.15)) * this.spellModifier()
-      }
-
-      return 0;
-    },
-
-    castCard: function(manaPool) {
-      mana = manaPool();
-      _.find
-    },
-
-    spellModifier: function() {
-      types = this.get("types")
-      var card = this
-      score = 0
-      _.each(types, function(type){
-        switch(type) {
-          case "Creature":
-            score += card.creatureScore()
-            break;
-          case "Instant":
-            score += 0.85
-            break;
-          case "Sorcery":
-            score += 1.15
-            break;
-          case "Enchantment":
-            score += card.enchantmentScore()
-            break;
-          default:
-            score += 1.0
-        }
-      })
-
-      return score;
-    },
-
-    creatureScore: function() {
-      power = parseInt(this.get("power"))
-      tough = parseInt(this.get("toughness"))
-
-      if (isNaN(power) || isNaN(tough)) {
-        return 1;
-      } else {
-        return (power * 0.15) + (tough * 0.075)
-      }
-    },
-
-    enchantmentScore: function() {
-      enchant = this.get("type")
-
-      if (enchant === "Enchantment - Aura") {
-        return 0.85;
-      } else {
-        return 1.15;
-      }
-    },
-
-    getSolidCost: function() {
-      manaCost = this.get("manaCost").split(/[^\w]/)
-      cost = 0
-
-      _.each(manaCost, function(mana){
-        if (cardSymbols[mana]) {
-          cost++;
-        }
-      })
-
-      return cost;
-    },
-
-    isArtifact: function() {
-      if (this.has("colors")) {
-        return false
-      } else {
-        return true;
-      }
-    },
-
-    hasFrequency: function(freq) {
-      return (this.get("rarity").toLowerCase()) === freq;
-    },
-
-    imgTag: function() {
-      site = "'http://mtgimage.com/multiverseid/" + this.get("multiverseid") + ".jpg'"
-      size = " width='225' height='300'"
-      return "<img src=" + site + size + ">"
-    },
-
-    imgName: function() {
-      name = this.get("multiverseid")
-
-      return "<li><a href='" + "#card" + "' name='" + name + "'>" + this.get("name") + "</a></li>"
-    },
-
-    containsColor: function(color) {
-      colors = this.get("colors")
-      return _.some(colors, function(c){
-        return c === color;
-      });
-    },
-
-    isMonoColor: function() {
-      if (this.has("colors")) {
-        return this.get("colors").length === 1;
-      } else {
-        return false;
-      }
-    },
-
-    isOfColor: function(color) {
-      if (this.has("colors")) {
-        return this.get("colors").indexOf(color) === 0 && this.isMonoColor(color);
-      } else {
-        return false;
-      }
-    },
-
-    isOfType: function(type) {
-      return _.some(this.get("types"), function(cardType) { return cardType === type })
-    },
-
-    isLand: function() {
-      return this.get("type") === "Land" || _.some(this.get("types"), function(type){return type === "Land"})
-    },
-
-    isArtifactCreature: function() {
-      return this.get("types") === ["Artifact", "Creature"]
-    },
-
-    isSpell: function(spell) {
-      return _.some(this.get("types"), function(type){
-        return type === spell;
-      })
-    },
-
-    isMulti: function() {
-      if (this.has("colors")) {
-        return this.get("colors").length > 1
-      } else {
-        return false;
-      }
-    },
-
-    calculateCost: function(color) {
-      manaSymbols = this.get("manaCost").split(/[^\w]/)
-      manaCost = 0
-      _.each(manaSymbols, function(c){
-        if (c !== "" && c !== "X") {
-          if (c === cardColors[color]) {
-            manaCost += 1.5
-          } else {
-            manaCost += parseInt(c)
-          }
-        } else {
-
-        }
-      })
-
-      return manaCost;
-    }
-  })
+    return cards
+  }
 
   var getList = function (name, setList) {
     $.getJSON("http://mtgjson.com/json/" + name, function(data){
-      console.log(Date.now(), "Getlista")
     }).done(function(data){
-      console.log(Date.now(), "Done")
       setList(data);
-    })
-  }
-
-  var getAllCards = function (setList, complete) {
-    var collection = [];
-
-    for (i = 0; i < setList.length; i++) {
-      getList(setList[i].code + ".json", function(cardSet){
-        collection.push(cardSet)
-        if (collection.length === setList.length) {
-          complete(collection);
-        }
-      })
-    }
-  }
-
-  var constructDeck = function(deck, filter, profileKey) {
-    if (filter === "CMC") {
-      deck.displayCosts(cmcSymbol)
-    } else if (filter === "Color") {
-      deck.displayColors()
-    } else if (filter === "Spell") {
-      deck.displayTypes()
-    } else {
-      $("div.card-placeholder").empty()
-    }
-
-    $("a").on("mouseenter", function(e) {
-      card = deck.findCard($(this).attr("name"))
-      img = card.imgTag()
-      pos = $(this).position()
-      $("div.img img").remove()
-      $("div.img").show()
-      $("div.img").append(img)
-    })
-
-    $("a").on("click", function(e){
-      e.preventDefault();
-      card = deck.findCard($(this).attr("name"))
-      customDeck.addCard(card)
-      customDeck.redraw()
-      $(this).remove()
-    })
-
-    $("#decks").on("submit", function(e){
-      e.preventDefault();
-
-      customDeck.foreignKey(profile.get("foreignKey"))
-      window.customDeck = customDeck
-      $.ajax({
-        url: "/cards/draft",
-        data: JSON.stringify(customDeck),
-        headers: {"Content-Type": "application/json"},
-        type: "POST",
-        dataType: "json",
-        success: function(data, xhr, error) {
-          console.log(data)
-        }
-      })
     })
   }
 
@@ -644,195 +147,93 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
     })
   }
 
+  var randomizeBooster = function(booster, n, list) {
+    cards = []
+    i = 0
+    for (i = 0; i < n; i++) {
+      random = _.map(booster, function(b){
+        while (typeof b === "string") {
+          card = list.sample()
+          if (card.hasFrequency(b)) {
+            return card;
+          }
+        }
+      })
 
-  var changeView = function(deck, filter) {
-    if (filter === "CMC") {
-      deck.displayCosts(cmcSymbol)
-    } else if (filter === "Color") {
-      deck.displayColors()
-    } else if (filter === "Spell") {
-      deck.displayTypes()
-    } else {
-      $("div.card-placeholder").empty()
+      cards.push(random)
     }
+
+    return _.flatten(cards);
   }
 
-  $("#profile").on("submit", function(e){
-    e.preventDefault();
+  var setView = function(draft, filter, section) {
+    $("#" + section).empty()
+    values = draft.display(filter)
+    window.values = values
+    _.each(_.keys(values), function(cat){
+      if (!_.isEmpty(values[cat])) {
+        $("#" + section).append("<h3>" + cat + "</h3>")
+        _.each(values[cat], function(v,k){
+          len = "<span>" + v.length + "</span>x "
+          name = len + v[0].get("name")
+          multiverseid = v[0].get("multiverseid")
+          $("#" + section).append("<li>" + "<a href='#' card_id='" + multiverseid + "'>" + name + "</a></li>")
+        })
+      }
+    })
+  }
+
+  $("#profile button").on("click", function(e){
     profileName = $("#profile input").val()
     var profile = new Profile({name: profileName})
     loadList();
+
 
     profile.insertToDB(function(key){
       var cardSet;
       $("#deckSelection").on("change", function(e){
         e.preventDefault();
         set = $("#deckSelection option:selected").attr("name");
-        cardSet = new CardSet({code: set})
-        var cards;
+        // cardSet = new CardSet({code: set})
 
         var request = function() {
-          return $.getJSON("http://mtgjson.com/json/" + cardSet.get("code") + ".json")
+          return $.getJSON("http://mtgjson.com/json/" + set + ".json")
         }
+
+        window.list = new List()
 
         request().done(function(data){
-          cardSet.set("cards", data.cards)
-          cardSet.set("booster", data.booster)
+          _.each(data.cards, function(card){
+            card = new Card(card)
+            list.add(card)
+          })
 
-          cardSet.initializeCards(); // that sets the draft
+          var filter = function() { return $("#types option:selected").val().toLowerCase() }
+          set = randomizeBooster(data.booster, 6, list)
 
-          initial = $("#types option:selected").val()
-          changeView(cardSet, initial)
+          draft = new Draft({cards: set})
+          setView(draft, filter(), "sideboard")
+
+          $("a").on("mouseenter", function(e){
+            card = deck.findCard($(this).attr("name"))
+            img = card.imgTag()
+            $("div.img img").remove()
+            $("div.img").show()
+            $("div.img").append(img)
+          })
 
           $("#types").on("change", function(e){
-            window.cardSet = cardSet
-            filter = $("#types option:selected").val()
-            constructDeck(cardSet, filter, key)
+            e.preventDefault();
+            setView(draft, filter(), "sideboard")
           })
         })
-
-
-
-        // cardSet.downloadCards(function(){
-        //   if (cardSet.has("booster")) {
-        //     $("#decks button").on("click", function(e){
-        //       boosterized = cardSet.randomizeBooster(6);
-        //       window.boosterized = boosterized
-        //       e.preventDefault();
-        //       filter = $("#types option:selected").val()
-        //       constructDeck(cardSet.randomizeBooster(6), filter, key)
-        //     })
-        //   }
-        // })
-
-
       })
-
-
-
     })
-
-    // getList("SetList.json", function(setList){
-    //   getAllCards(setList, function(cardSets){
-    //     $("select.decks option:selected").remove()
-    //     cardSets = _.map(cardSets, function(cardSet){
-    //       date = d3.time.format("%Y-%m-%d").parse(cardSet.releaseDate)
-    //       cardSet = new CardSet(cardSet);
-    //       cardSet.set("releaseDate", date)
-    //       cardSet.initializeCards();
-    //       return cardSet;
-    //     })
-
-    //     cardSets = _.filter(cardSets, function(cardSet){
-    //       $("select.decks").append("<option name='" + cardSet.get("name") + "'>" + cardSet.get("name") + "</option>")
-    //       return cardSet.has("booster") && cardSet.get("name") !== "Alara Reborn"
-    //     })
-
-    //     $("#decks select").on("change", function(e){
-    //       e.preventDefault();
-    //       $("div.card-placeholder div").remove()
-    //       name = $("select.decks option:selected").attr("name")
-    //       set = _.find(cardSets, function(cardSet) { return cardSet.get("name") === name })
-    //       filter = $("select[name='display']").children(":selected").text()
-    //       constructDeck(set.randomizeBooster(6), filter, profile)
-    //     })
-
-    //     _.each(cardSets, function(cardSet){
-    //       cardSet.setAverages();
-    //     })
-
-    //     showMeTheData = _.map(cardSets, function(cardSet){
-    //       return cardSet.attributes
-    //     })
-
-        //visualizeMe(showMeTheData)
-    //   })
-    // })
   })
-
-
-  var visualizeMe = function (data) {
-    data = _.sortBy(data, function(d){ return d.releaseDate })
-
-    var margin = {top: 20, right: 20, bottom: 30, left: 50},
-        width = 1800 - margin.left - margin.right,
-        height = 1000 - margin.top - margin.bottom;
-
-    var x = d3.time.scale()
-      .range([0, width]);
-
-    var y = d3.scale.linear()
-      .range([height, 0]);
-
-    var xAxis = d3.svg.axis()
-      .scale(x)
-      .orient("bottom");
-
-    var yAxis = d3.svg.axis()
-      .scale(y)
-      .orient("left");
-
-    var line = d3.svg.line()
-      .interpolate("basis")
-      .x(function(d) { return x(d.date); })
-      .y(function(d) { return y(+d.diff); });
-
-    var svg = d3.select("body").append("svg")
-      .attr("width", width + margin.left + margin.right)
-      .attr("height", height + margin.top + margin.bottom)
-    .append("g")
-      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
-
-    var colors = _.map(["White", "Red", "Blue", "Green", "Black"], function(color){
-      diffs = _.map(data, function(set){
-        return { diff: set["differential" + color], date: set.releaseDate }
-      })
-
-      return { color: color, diffs: diffs }
-    })
-
-    var dates = _.map(data, function(d) { return d.releaseDate })
-
-    x.domain(d3.extent(dates, function(d) { return d; }));
-    y.domain([-2, 2])
-
-    svg.append("g")
-      .attr("class", "x axis")
-      .attr("transform", "translate(0," + height + ")")
-      .call(xAxis);
-
-    svg.append("g")
-      .attr("class", "y axis")
-      .call(yAxis)
-    .append("text")
-      .attr("transform", "rotate(-90)")
-      .attr("y", 6)
-      .attr("dy", ".71em")
-      .style("text-anchor", "end")
-      .text("Cost Differential")
-      .attr("stroke", "black")
-
-
-
-
-    var set = svg.selectAll(".sets")
-      .data(colors)
-      .enter()
-      .append("g")
-      .attr("class", "sets")
-
-    set.append("path")
-      .attr("class", "line")
-      .attr("d", function(d){
-        return line(d.diffs)
-      })
-      .style("stroke", function(d){
-        if (d.color === "White") {
-          color = d3.scale.category10();
-          return color(d);
-        } else {
-          return d.color;
-        }
-      })
-  }
 })
+
+// obj = {
+//   category: [
+//     { cardID: [cards], cardID2: [cards] }
+//   ]
+// }
