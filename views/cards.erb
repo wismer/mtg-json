@@ -9,29 +9,30 @@
   <div class="card-portal">
     <div class="card-types"></div>
     <div class="card-sets">
-      <form id="profile" name="profile" method="POST">
+      <div id="profile" name="profile">
         <label>Enter Name Before Proceeding<input type="text" placeholder="Enter Name of Your Deck" /></label>
         <button type="submit">Save</button>
-      </form>
-      <form id="decks" name="decks">
-        <select class="decks">
+      </div>
+      <div id="decks" name="decks">
+        <select id="deckSelection">
           <option selected>Loading Card Sets...</option>
         </select>
-        <select name='display'>
-          <option selected>Sort By:</option>
-          <option>CMC</option>
-          <option>Color</option>
-          <option>Spell</option>
+        <select id='types' name='display'>
+          <option selected>CMC</option>
+          <option>Colors</option>
+          <option>Types</option>
         </select>
-        <button name="submit">Save Set</button>
-      </form>
+        <button>Save Set</button>
+      </div>
     </div>
     <div class="sub-set">
       <div class='pictures'></div>
     </div>
     <div id="visualizer">
       <div class="img" style="display:none"></div>
-      <div class="card-placeholder"></div>
+      <div class="card-placeholder">
+        <div id='sideboard'></div>
+      </div>
       <div class="player"></div>
     </div>
   </div>
