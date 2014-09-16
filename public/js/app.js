@@ -168,8 +168,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
   var setView = function(draft, filter, section) {
     $("#" + section).empty()
-    values = draft.display(filter)
-    window.values = values
+    var values = draft.display(filter)
     _.each(_.keys(values), function(cat){
       if (!_.isEmpty(values[cat])) {
         $("#" + section).append("<h3>" + cat + "</h3>")
@@ -180,6 +179,13 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
           $("#" + section).append("<li>" + "<a href='#' card_id='" + multiverseid + "'>" + name + "</a></li>")
         })
       }
+    })
+
+    $("a").on("mouseenter", function(e){
+      var tag = "<img src='http://mtgimage.com/multiverseid/" + $(this).attr("card_id") + ".jpg"
+      tag += "' height='320' width='240'>"
+      $("div.img").empty()
+      $("div.img").append(tag)
     })
   }
 
@@ -212,19 +218,11 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
           set = randomizeBooster(data.booster, 6, list)
 
           draft = new Draft({cards: set})
-          setView(draft, filter(), "sideboard")
-
-          $("a").on("mouseenter", function(e){
-            card = deck.findCard($(this).attr("name"))
-            img = card.imgTag()
-            $("div.img img").remove()
-            $("div.img").show()
-            $("div.img").append(img)
-          })
+          setView(draft, filter(), "sideboard", draft)
 
           $("#types").on("change", function(e){
             e.preventDefault();
-            setView(draft, filter(), "sideboard")
+            setView(draft, filter(), "sideboard", draft)
           })
         })
       })
