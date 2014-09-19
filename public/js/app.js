@@ -16,21 +16,17 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
   var cardColors = {White: "W", Black: "B", Red: "R", Blue: "U", Green: "G", Artifact: null, Multi: null }
   var cardSymbols = { W: "White", B: "Black", R: "Red", U: "Blue", G: "Green" }
 
-  var categories = {
-    spells: function(obj) {
+  var categories = function (category) {
+    var obj = {}
+    if (category === "types") {
       _.each(spellTypes, function(spell){ obj[spell] = {} })
-      return obj;
-    },
-
-    colors: function(obj) {
+    } else if (category === "colors") {
       _.each(_.keys(cardColors), function(color){ obj[color] = {} })
-      return obj;
-    },
-
-    cmc: function(obj) {
+    } else {
       for (i = 0; i < 13; i++) { obj[i] = {} }
-      return obj
     }
+
+    return obj;
   }
 
   var Card = Backbone.Model.extend({
@@ -38,8 +34,8 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       card: card
     },
 
-    category: function(category) {
-      value = this.get(category)
+    categoryProperty: function(category) {
+      var value = this.get(category)
 
       if (category === "types") {
         return value[0]
@@ -58,7 +54,19 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
 
     isArtifact: function() {
       return this.has("cmc") && (!this.has("colors"))
+    },
+
+    hasCategory: function(category) {
+
     }
+
+    // When sorting...
+    // the object will look like this:
+    // obj = {
+    //   blue: {cid: [cards], cid1: [cards]}
+    //   black: {cid: [cards], cid1: [cards]}
+    //   etc...
+    // }
   })
 
 
@@ -90,32 +98,30 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
   var Draft = Backbone.Model.extend({
     initialize: function(draft) {
       cards: draft.cards
+      type: draft.type
     },
 
-    display: function(category) {
-      cards = this.get("cards")
-      if (category === "cmc") {
-        cards = _.filter(cards, function(card){ return card.has("cmc") })
-        result = categories.cmc({})
-      } else if (category === "types") {
-        result = categories.spells({})
-      } else {
-        cards = _.filter(cards, function(card){ return card.has("colors") || card.isArtifact()})
-        result = categories.colors({})
-      }
-
-      _.each(cards, function(card){
-        key = card.category(category)
-        if (key) {
-          if (result[key][card.cid]) {
-            result[key][card.cid].push(card)
-          } else {
-            result[key][card.cid] = [card]
-          }
-        }
+    display: function(cat) {
+      var cards = this.get("cards")
+      var category = categories(cat)
+      _.each(cards, function(subset){
+        card = subset[0]
+        property = card.categoryProperty(cat);
+        if (property) { category[property][card.cid] = subset }
       })
 
-      return result;
+      return category;
+    },
+
+    addCard: function(card) {
+      cards.push(card)
+    },
+
+    removeCard: function(cid) {
+      var card;
+      i = _.indexOf(cards, cid)
+      cards = _.filter(cards, function(c){ return c.cid !== cid })
+      return cards
     }
   })
 
@@ -163,20 +169,39 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       cards.push(random)
     }
 
-    return _.flatten(cards);
+
+    cards = _.flatten(cards)
+    return sortCards(cards);
   }
 
-  var setView = function(draft, filter, section) {
+  var sortCards = function(cards) {
+    var obj = {}
+
+    _.each(cards, function(card){
+      if (obj[card.cid]) {
+        obj[card.cid].push(card)
+      } else {
+        obj[card.cid] = [card]
+      }
+    })
+
+    return obj;
+  }
+
+
+  var setView = function(draft, filter) {
+    window.draft = draft
+    var section = draft.get("type")
     $("#" + section).empty()
     var values = draft.display(filter)
     _.each(_.keys(values), function(cat){
       if (!_.isEmpty(values[cat])) {
         $("#" + section).append("<h3>" + cat + "</h3>")
         _.each(values[cat], function(v,k){
-          len = "<span>" + v.length + "</span>x "
-          name = len + v[0].get("name")
-          multiverseid = v[0].get("multiverseid")
-          $("#" + section).append("<li>" + "<a href='#' card_id='" + multiverseid + "'>" + name + "</a></li>")
+          var len = "<span>" + v.length + "</span>x "
+          var name = len + v[0].get("name")
+          var multiverseid = v[0].get("multiverseid")
+          $("#" + section).append("<li>" + "<a href='#' cid='" + k + "' card_id='" + multiverseid + "'>" + name + "</a></li>")
         })
       }
     })
@@ -200,13 +225,12 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
       $("#deckSelection").on("change", function(e){
         e.preventDefault();
         set = $("#deckSelection option:selected").attr("name");
-        // cardSet = new CardSet({code: set})
 
         var request = function() {
           return $.getJSON("http://mtgjson.com/json/" + set + ".json")
         }
 
-        window.list = new List()
+        var list = new List();
 
         request().done(function(data){
           _.each(data.cards, function(card){
@@ -215,14 +239,28 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone'], function($, d3, _, backbon
           })
 
           var filter = function() { return $("#types option:selected").val().toLowerCase() }
-          set = randomizeBooster(data.booster, 6, list)
 
-          draft = new Draft({cards: set})
-          setView(draft, filter(), "sideboard", draft)
+          var set = randomizeBooster(data.booster, 6, list)
+          var sideboard = new Draft({cards: set, type: 'sideboard'})
+          var player = new Draft({cards: [], type: 'player'})
+
+          setView(sideboard, filter())
 
           $("#types").on("change", function(e){
             e.preventDefault();
-            setView(draft, filter(), "sideboard", draft)
+            setView(sideboard, filter())
+          })
+
+          $("a").on("click", function(e){
+            var klass = $(this).attr('class')
+            var card;
+            if (klass === 'sideboard') {
+              card = sideboard.removeCard($(this).attr('cid'))
+              player.addCard(card)
+            } else if (klass === 'player') {
+              card = player.removeCard($(this).attr('cid'))
+              sideboard.addCard(card)
+            }
           })
         })
       })
