@@ -18,9 +18,9 @@
           <option selected>Loading Card Sets...</option>
         </select>
         <select id='types' name='display'>
-          <option selected>CMC</option>
-          <option>Colors</option>
-          <option>Types</option>
+          <option value="cmc" selected>CMC</option>
+          <option value="colors">Colors</option>
+          <option value="types">Types</option>
         </select>
         <button>Save Set</button>
       </div>
@@ -32,8 +32,8 @@
       <div class="img"></div>
       <div class="card-placeholder">
         <div id='sideboard'></div>
+        <div id="player"></div>
       </div>
-      <div class="player"></div>
     </div>
   </div>
 </html>
