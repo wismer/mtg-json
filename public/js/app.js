@@ -35,6 +35,10 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
       card: card
     },
 
+    isBasicLand: function() {
+      return this.get("rarity") === "Basic Land"
+    },
+
     getType: function() {
       var types = this.get("types")
       return types.length > 1 ? types.join(" ") : types[0]
@@ -117,24 +121,45 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
     swapCard: function(cid, side) {
       var player = this.get("player")
       var sideboard = this.get("sideboard")
-      var card;
 
       function removeCard (set) {
-        card = set[cid].pop()
+        var card = set[cid].pop()
         if (set[cid].length === 0) {
           delete set[cid]
         }
+
+        return card
       }
 
+      function addCard(card, set) {
+        if (set[cid]) {
+          set[cid].push(card)
+        } else {
+          set[cid] = [card]
+        }
+      }
       if (side === "player") {
-        removeCard(player)
+        addCard(removeCard(player), sideboard)
       } else {
-        removeCard(sideboard)
+        addCard(removeCard(sideboard), player)
       }
     }
   })
 
   var randomizeBooster = function(booster, list) {
+    function addBasicLands () {
+      var lands = []
+      var basic = _.filter(list.models, function(card){
+        return card.isBasicLand()
+      })
+
+      _.each(_.uniq(basic), function(card){
+        for (i = 0; i < 20; i++) { lands.push(card) }
+      })
+
+      return lands
+    }
+
     function isNormal(freq) {
       return freq === "uncommon" || freq === "rare" || freq === "common";
     }
@@ -157,7 +182,7 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
     }
 
     var toObj = function(obj) {
-      cards = _.flatten(cards)
+      cards = _.flatten(cards).concat(addBasicLands())
       _.each(cards, function(card){
         if (obj[card.cid]) {
           obj[card.cid].push(card)
@@ -180,24 +205,24 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
       var category = $("#types option:selected").val()
       var player = collector(this.model.get("player"), category)
       var sideboard = collector(this.model.get("sideboard"), category)
-      var cardLink = function(card, n) {
-        var attributes = "<a href='#' cid='" + card.cid + "' img-id='" + card.get("multiverseid") + "'>"
-        return "<li>" + attributes + "<span>" + n + "</span>x " + card.get("name") + "</a></li>"
+      var cardLink = function(card, n, side) {
+        var attr = "<a href='#' class='" + side + "' cid='" + card.cid + "' img-id='" + card.get("multiverseid") + "'>"
+        return "<li>" + attr + "<span>" + n + "</span>x " + card.get("name") + "</a></li>"
       }
 
       function renderSide(side, section) {
         var side = _.map(side, function(cards,subcat){
           links = _.map(cards, function(card,cid){
-            return cardLink(card[0], card.length)
+            return cardLink(card[0], card.length, section)
           }).join("\n")
           return "<h1>" + subcat + "</h1>" + links;
         })
 
-        $(section).html(side)
+        $("#" + section).html(side)
       }
 
-      renderSide(player, "#player")
-      renderSide(sideboard, "#sideboard")
+      renderSide(player, "player")
+      renderSide(sideboard, "sideboard")
       clickLink();
     }
   })
@@ -247,8 +272,13 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
     function clickLink () {
       $("a").on("click", function(e){
         e.preventDefault();
-        draft.swapCard($(this).attr("cid"))
+        draft.swapCard($(this).attr("cid"), $(this).attr("class"))
         draft.trigger("change")
+      })
+
+      $("a").on("mouseenter", function(){
+        var id = $(this).attr("img-id")
+        $(".img").html("<img src='http://mtgimage.com/multiverseid/" + id + ".jpg'>")
       })
     }
 
@@ -261,56 +291,5 @@ requirejs(['jquery', 'd3', 'underscore', 'backbone', 'handlebars'], function($, 
     $("#types").on("change", function(e){
       draft.trigger("change")
     })
-
-    $("a").on("mouseenter", function(){
-      var id = $(this).attr("img-id")
-      $(".img").html("<img src='http://mtgimage.com/multiverseid/" + id + ".jpg'>")
-    })
-
-    $("a").on("click", function(e){
-      e.preventDefault();
-      draft.swapCard($(this).attr("cid"))
-      draft.trigger("change")
-    })
   })
-
-  // $("#profile button").on("click", function(e){
-  //   var profileName = $("#profile input").val()
-  //   var profile = new Profile({name: profileName})
-  //   profile.insertToDB(function(key){
-  //     var setlist = new SetList();
-  //     var SetView = Backbone.View.extend({
-  //       el: $(".deckSelection"),
-
-  //       initialize: function() {
-  //         this.listenTo(setlist, "change", this.render);
-  //       },
-
-  //       render: function () {
-  //         var expansions = setlist.get("expansions")
-  //         var options = _.map(expansions, function(exp) {
-  //           return "<option code='" + exp.code + "'>" + exp.name + "</option>"
-  //         }).join("\n")
-  //         this.$el.html(options)
-  //         return this;
-  //       }
-  //     })
-
-  //     var request = function(mtg) {
-  //       $.getJSON("http://mtgjson.com/json/" + mtg.name + ".json").done(function(data){
-  //         if (mtg.name === "SetList") {
-  //           setlist.set({expansions: data})
-  //         } else {
-  //           var booster = data.booster
-
-  //         }
-  //       })
-  //     };
-  //     var setview = new SetView();
-  //     setTimeout(request({name: "SetList"}), 500)
-  //     $("#deckSelection").on("change", function(e){
-  //       setTimeout(request({name: $(this).attr("name"), container: cardlist}))
-  //     })
-  //   })
-  // })
 })
